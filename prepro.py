@@ -64,8 +64,7 @@ def choose(model,src,res,res2):
 				for line in f_r:
 					line=line.decode('utf-8').strip()
 					if line:
-						#if u':' in line:
-						if u'' in line:
+						if u':' in line:
 							tmp=line.split(':')
 							if len(tmp)>3:
 								for w in model:
