@@ -3,6 +3,7 @@
 '''
 import xlwt
 import xlsxwriter
+import xlrd
 import re
 def proLine(line):
 	#print line
@@ -26,7 +27,7 @@ def proLine(line):
 			contents.append(w[ind+1:])
 		else:
 			pass
-	return date,province,city,work_order,aspects,contents
+	return date,province,city,work_order,sent
 		
 def process(src,res):
 	wb=xlsxwriter.Workbook(res)
@@ -39,7 +40,7 @@ def process(src,res):
 	ws.write(0,2,u"城市")
 	ws.write(0,3,u"工单号")
 	ws.write(0,4,u"模板")
-	#ws.write(0,5,"内容")
+	ws.write(0,5,"内容")
 	
 	with open(src,'r') as f_r:
 		for line in f_r:
@@ -55,53 +56,85 @@ def process(src,res):
 	#wt.save(res)
 	wb.close()
 	
-def choose(model,src,res,res2):
+def read_xls(src_xlsx):
+	model_buff=[]
+	data=xlrd.open_workbook(src_xlsx)
+	table=data.sheets()[0]
+	nrows=table.nrows
+	ncols=table.ncols
+	for i in range(1,nrows):
+		if table.cell(i,3).value not in model_buff:
+			#print table.cell(i,3).value
+			sent=table.cell(i,3).value.replace(u'*',u'.')
+			#print sent
+			model_buff.append(sent)
+	return model_buff
+	
+	
+	
+def choose(model,src,src_xlsx,res,res2,res_xlsx):
 	flag=True
 	flag_model=True
+	model_buff=read_xls(src_xlsx)
+	wb=xlsxwriter.Workbook(res_xlsx)
+	ws=wb.add_worksheet(u'sheet1')
+	#model=model+model_buff
+	model_dict={}
+	for w in model:
+		if w not in model_dict:
+			model_dict[w]=0
+	
+	num=1
+	ws.write(0,0,u"日期")
+	ws.write(0,1,u"省份")
+	ws.write(0,2,u"城市")
+	ws.write(0,3,u"工单号")
+	ws.write(0,4,u"具体内容")
+	ws.write(0,5,u"模板")
+	buff_file=[]
+	for i,w in enumerate(model):
+		buff_file.append(str(i)+w)
+	for i,bf in enumerate(buff_file):	
+		buff_file[i]=open('data//'+str(i)+'.txt','w')
+	
+	tmp_model=''
 	with open(res2,'w') as f_w2:
 		with open(res,'w') as f_w:
 			with open(src,'r') as f_r:
 				for line in f_r:
 					line=line.decode('utf-8').strip()
 					if line:
-						if u':' in line:
-							tmp=line.split(':')
-							if len(tmp)>3:
-								for w in model:
-									pattern=re.compile(w)
-									match = pattern.match(line)
-									if match:
-										flag_model=False
-										break
-								if flag_model==True:
-									f_w.write((line+'\n').encode('utf-8'))
-								else:
-									flag_model=True									
-							else:
-								#f_w2.write((line+'\n').encode('utf-8'))
-								f_w.write((line+'\n').encode('utf-8'))
-								pass
-						elif u';' in line:
-							tmp=line.split(';')
-							if len(tmp)>3:
-								for w in model:
-									pattern=re.compile(w)
-									match = pattern.match(line)
-									if match:
-										flag_model=False
-										break
-								if flag_model==True:
-									f_w.write((line+'\n').encode('utf-8'))
-								else:
-									flag_model=True	
-							else:
-								#f_w2.write((line+'\n').encode('utf-8'))
-								f_w.write((line+'\n').encode('utf-8'))
-								pass
-						else:
-							#f_w2.write((line+'\n').encode('utf-8'))
+						for i,w in enumerate(model):
+							#print type(w)
+							pattern=re.compile(w)
+							match = pattern.match(line)
+							if match:
+								buff_file[i].write((line+'\n').encode('utf-8'))
+								flag_model=False
+								tmp_model=w
+								model_dict[w]+=1
+								break
+						if flag_model==True:
 							f_w.write((line+'\n').encode('utf-8'))
-							pass
+						else:
+							if tmp_model in model_buff:
+								ws.write(num,6,"现有模板")
+							data=proLine(line)
+							ws.write(num,0,data[0])
+							ws.write(num,1,data[1])
+							ws.write(num,2,data[2])
+							ws.write(num,3,data[3])
+							ws.write(num,4,data[4])
+							ws.write(num,5,tmp_model)
+							num+=1
+							
+							flag_model=True					
+	wb.close()
+	for i,bf in enumerate(buff_file):
+		bf.close()
+		
+	for key in model_dict:
+		print key,model_dict[key]
 model=[
 	u'.*1 、故障时间.*故障号码为.*2 、故障现象为.*3 、是否曾欠费停机.*4 、周围人是否使用正常.*5 、故障地点为.*6 、是否个别网站/第三方应用无法使用.*7 、其他为.*客户要求.*',
 	u'.*主活动名称:.*主活动ID:.*子活动名称:.*操作员组织:.*操作员工号:.*操作员:.*渠道类型:.*办理时间:.*反映.*',
@@ -140,12 +173,38 @@ model=[
 	u'.*1、故障类型.*2、故障开始时间.*3、故障号码.*4、周围人是否使用正常（或更换手机是否正常）.*5、其他信息及客户要求.*',	u'.*1、故障类型.*2、故障开始时间.*3、故障号码.*4、周围人是否使用正常（或更换手机是否正常）.*5、是否与单一用户不好用，与其他用户通话正常（如提示正在通话中或忙音）.*6、故障地点.*',
 	u'.*1 、故障时间.*2 、选择具体提示音.*3 、故障号码.*4 、其他信息及客户要求.*',	u'.*1、故障时间.*2、故障现象.*3、是否曾欠费停机（故障时间3天内）.*4、重启手机后是否正常.*5、周围人是否使用正常（关开4G开关或更换手机是否正常）.*6、故障地点.*7、是否个别网站/第三方应用无法使用（选是时填写网站或软件名）.*8、其他.*',	u'.*1、主叫是否为本省客户.*2、被叫号码.*3、主叫号码.*4、被叫号码.*5、故障开始时间.*6、故障结束时间.*7、其他信息及客户要求.*',
 	u'.*1 、故障开始时间.*2 、故障现象.*3 、手机4G上网是否正常(或是否在所有地点均不好用).*',
-	u'.*故障开始时间.*故障现象.*'
+	u'.*故障开始时间.*故障现象.*',
+	u'.*1 、故障开始时间.*2 、故障号码.*3 、其他信息及客户要求.*',
+	u'.*1 、故障时间.*2 、周围人是否使用正常.*3 、故障地点.*4 、客户所在地点是否信号弱（信号3格以下）.*5 、其他.*',
+	u'.*1 、短信发送方是否为本省客户.*2 、被叫号码.*3 、不能接收的短信类型.*4 、故障开始时间.*5 、故障结束时间.*6 、其他信息及客户要求.*',
+	u'.*1 、故障类型.*2 、故障开始时间.*3 、故障号码.*4 、周围人是否使用正常（关开4G开关或更换手机是否正常）.*5 、故障地点.*6 、今天出现几次这种现象.*7 、对方号码.*8 、其他信息及客户要求.*',
+	u'.*1 、故障时间.*2 、故障现象.*3 、是否曾欠费停机（故障时间3天内）.*4 、周围人是否使用正常（关开4G开关或更换手机是否正常）.*5 、其他.*',
+	u'.*1 、故障时间.*2 、周围人是否使用正常.*3 、故障地点.*4 、客户所在地点是否信号弱（信号3格以下）.*5 、其他.*',
+	u'.*客户为活动赠送省内500M流量.*',
+	u'.*飞享套餐.*客户反映.*',
+	u'.*（退费单）.*',
+	u'.*未经客户许可情况下被.*客户要求.*',
+	u'.* 客户不知情订购.*元/月.*CBOSS 接口工号.*客户要求返费并回复解决.*',
+	u'.*客户为品牌内包含.*本地流量.*月没有超出赠送流量却产生.*元流量费.*免费流量显示.*客户要求.*给予合理解释.*',
+	u'.*客户为无线上网功能.*月未使用手机上网却产生.*元流量费.*经客服系统查询.*免费流量显示.*客户要求.*',
+	u'.*客户为.*认为流量使用过快.*免费流量显示.*客户要求.*',
+	u'.*月产生.*元小额支付费用.*客户要求.*',
+	u'.*客户办理.*未收到提醒信息.*导致产生上网费.*客户要求.*',
+	u'.*故障号码.*投诉问题：.*在未经客户许可情况下通过.*客户要求.*',
+	u'.*未经客户许可情况下被办理.*客户要求.*',
+	u'.*本月不知情订购.*请.*处理.*',
+	u'.*本月不知情产生.*费.*要求.*费.*',
+	u'.*客户不知情产生.*费.*要求.*费.*',
+	u'.*故障号码.*投诉问题.*',
+	u'.*不知情开通了手机号码.*归属.*现因全国一证五号原因，无法办理入网业务，客户要求给予处理。',
+	u'.*客户为.*免费流量显示.*客户要求.*',	u'.*【客户信息】客户编号:.*客户名称:.*集团级别:.*客户服务等级:.*集团客户经理联系人:.*集团客户经理联系电话:.*客户经理:.*客户经理电话:.*客户区域所在城市:.*客户区域所在区县:.*产品实例标识:.*业务保障等级:.*业务服务时限:.*业务类型:.*【投诉现象】:.*【投诉人信息】回复号码:.*客户联系电话:.*',
+	u'.*投诉号码：.*投诉时间：.*投诉业务：.*投诉事件：.*客户要求：.*',	u'.*问题描述：.*投诉时间:.*问题分类:.*产品:.*投诉来源:.*紧急程度:.*地点（文本）:.*经纬度地点:.*网络设备分类标识:.*网络设备唯一标识:.*终端设备唯一标识:.*'
 		]
 if __name__=='__main__':
 	import sys
 	#process(sys.argv[1].decode('gbk'),sys.argv[2].decode('gbk'))
-	choose(model,sys.argv[1].decode('gbk'),sys.argv[2].decode('gbk'),sys.argv[3].decode('gbk'))
+	#choose(model,sys.argv[1].decode('utf-8'),sys.argv[2].decode('utf-8'),sys.argv[3].decode('utf-8'),sys.argv[4].decode('utf-8'),sys.argv[5].decode('utf-8'))
+	choose(model,sys.argv[1].decode('gbk'),sys.argv[2].decode('gbk'),sys.argv[3].decode('gbk'),sys.argv[4].decode('gbk'),sys.argv[5].decode('gbk'))
 	
 				
 				
